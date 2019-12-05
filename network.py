@@ -126,6 +126,7 @@ class Discriminator(nn.Module):
 
         # -> [-1, 1, 1x1]
         self.conv5 = nn.Conv2d(512, 1, 4, 1, 0, bias=False)
+        self.sig = nn.Sigmoid()
 
     def forward(self, input):
         layer1 = self.layer1( self.conv1( input ) )
@@ -135,4 +136,7 @@ class Discriminator(nn.Module):
 
         feature = [layer2, layer3, layer4]
 
-        return nn.Sigmoid( self.conv5(layer4) ), feature
+        res = self.conv5(layer4)
+        sig = nn.Sigmoid()
+
+        return sig(res), feature

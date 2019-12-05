@@ -24,8 +24,9 @@ parser.add_argument('--num_epochs', type=int, default=10)
 parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
 # misc
-parser.add_argument('--model_path', type=str, default='./models')  # Model Tmp Save
+parser.add_argument('--model_path', type=str, default='C:/Capstone/ai_dataset/discogan_models/')  # Model Tmp Save
 parser.add_argument('--sample_path', type=str, default='./test_results')  # Results
+parser.add_argument('--load_epoch', type=int, default=-1)
 
 ##### Helper Functions for Data Loading & Pre-processing
 class ImageFolder(data.Dataset):
@@ -41,7 +42,7 @@ class ImageFolder(data.Dataset):
                                                                   (0.5, 0.5, 0.5))])
         self.image_len = None
 
-        self.dir_base = './datasets'
+        self.dir_base = 'C:/Capstone/Pytorch-TextureGAN/results/out'
         if self.task.startswith('edges2'):
             self.root = os.path.join(self.dir_base, self.task)
             self.dir_AB = os.path.join(self.root, 'val')  # ./maps/train
@@ -49,13 +50,14 @@ class ImageFolder(data.Dataset):
             self.image_len = len(self.image_paths)
 
         elif self.task == 'handbags2shoes': # handbags2shoes
-            self.rootA = os.path.join(self.dir_base, 'edges2handbags')
-            self.rootB = os.path.join(self.dir_base, 'edges2shoes')
-            self.dir_A = os.path.join(self.rootA, 'val')
-            self.dir_B = os.path.join(self.rootB, 'val')
+            self.rootA = os.path.join(self.dir_base, '')
+            # self.rootB = os.path.join(self.dir_base, 'edges2shoes')
+            self.dir_A = os.path.join(self.rootA, '')
+            # self.dir_B = os.path.join(self.rootB, 'val')
             self.image_paths_A = list(map(lambda x: os.path.join(self.dir_A, x), os.listdir(self.dir_A)))
-            self.image_paths_B = list(map(lambda x: os.path.join(self.dir_B, x), os.listdir(self.dir_B)))
-            self.image_len = min(len(self.image_paths_A), len(self.image_paths_B))
+            print(self.image_paths_A[:5])
+            # self.image_paths_B = list(map(lambda x: os.path.join(self.dir_B, x), os.listdir(self.dir_B)))
+            self.image_len = len(self.image_paths_A)  # min(len(self.image_paths_A), len(self.image_paths_B))
 
         else: # facescrubs
             self.root = os.path.join(self.dir_base, 'facescrub')
@@ -76,23 +78,23 @@ class ImageFolder(data.Dataset):
             w_total = AB.size(2)
             w = int(w_total / 2)
 
-            A = AB[:, :64, :64]
-            B = AB[:, :64, w:w + 64]
+            A = AB[:, :64, :w]
+            # B = AB[:, :64, w:w + 64]
 
         elif self.task == 'handbags2shoes': # handbags2shoes
             A_path = self.image_paths_A[index]
-            B_path = self.image_paths_B[index]
+            # B_path = self.image_paths_B[index]
             A = Image.open(A_path).convert('RGB')
-            B = Image.open(B_path).convert('RGB')
+            # B = Image.open(B_path).convert('RGB')
 
-            A = self.transformP(A)
-            B = self.transformP(B)
+            A = self.transformS(A)
+            # B = self.transformP(B)
 
-            w_total = A.size(2)
-            w = int(w_total / 2)
+            # w_total = A.size(2)
+            # w = int(w_total / 2)
 
-            A = A[:, :64, w:w+64]
-            B = B[:, :64, w:w+64]
+            # A = A
+            # B = B[:, :64, w:w+64]
 
         else: # Facescrubs
             A_path = self.image_paths_A[index]
@@ -103,7 +105,7 @@ class ImageFolder(data.Dataset):
             A = self.transformS(A)
             B = self.transformS(B)
 
-        return {'A': A, 'B': B}
+        return {'A': A}  # {'A': A, 'B': B}
 
     def __len__(self):
         return self.image_len
@@ -138,47 +140,62 @@ def main():
     if not os.path.exists(args.sample_path):
         os.makedirs(args.sample_path)
 
+    # Load model
+    if args.load_epoch != 0:
+        epoch = args.load_epoch
+
+        if epoch == -1:
+            with open(os.path.join(args.model_path, 'checkpoint.txt')) as f:
+                epoch = int(f.readline())
+
+        print('Epoch %d has loaded.' % epoch)
+    else:
+        epoch = 0
+
     # Networks
-    g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % (args.num_epochs))
-    g_pathBtoA = os.path.join(args.model_path, 'generatorBtoA-%d.pkl' % (args.num_epochs))
+    g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % epoch)
+    # g_pathBtoA = os.path.join(args.model_path, 'generatorBtoA-%d.pkl' % epoch)
 
     generator_AtoB = Generator()
-    generator_BtoA = Generator()
+    # generator_BtoA = Generator()
 
     generator_AtoB.load_state_dict(torch.load(g_pathAtoB))
     generator_AtoB.eval()
 
-    generator_BtoA.load_state_dict(torch.load(g_pathBtoA))
-    generator_BtoA.eval()
+    # generator_BtoA.load_state_dict(torch.load(g_pathBtoA))
+    # generator_BtoA.eval()
 
     if torch.cuda.is_available():
         generator_AtoB = generator_AtoB.cuda()
-        generator_BtoA = generator_BtoA.cuda()
+        # generator_BtoA = generator_BtoA.cuda()
 
     """Train generator and discriminator."""
     total_step = len(data_loader) # For Print Log
     iter = 0
     for i, sample in enumerate(data_loader):
         input_A = sample['A']
-        input_B = sample['B']
+        # input_B = sample['B']
 
         A = to_variable(input_A)
-        B = to_variable(input_B)
+        # B = to_variable(input_B)
 
         # ===================== Forward =====================#
         A_to_B = generator_AtoB(A)
-        B_to_A = generator_BtoA(B)
+#        B_to_A = generator_BtoA(B)
 
-        A_to_B_to_A = generator_BtoA(A_to_B)
-        B_to_A_to_B = generator_AtoB(B_to_A)
+#        A_to_B_to_A = generator_BtoA(A_to_B)
+#        B_to_A_to_B = generator_AtoB(B_to_A)
 
         # print the log info
         print('Validation [%d/%d]' % (i + 1, total_step))
             
         # save the sampled images
-        res1 = torch.cat((torch.cat((A, A_to_B), dim=3), A_to_B_to_A), dim=3)
-        res2 = torch.cat((torch.cat((B, B_to_A), dim=3), B_to_A_to_B), dim=3)
-        res = torch.cat((res1, res2), dim=2)
+
+        # res1 = torch.cat((torch.cat((A, A_to_B), dim=3), A_to_B_to_A), dim=3)
+        # res2 = torch.cat((torch.cat((B, B_to_A), dim=3), B_to_A_to_B), dim=3)
+        # res = torch.cat((res1, res2), dim=2)
+
+        res = torch.cat((A, A_to_B), dim=2)
         torchvision.utils.save_image(denorm(res.data), os.path.join(args.sample_path, 'Generated-%d.png' % (i + 1)))
             
 

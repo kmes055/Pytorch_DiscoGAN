@@ -1,25 +1,20 @@
 import argparse
 import os
-import random
 import numpy as np
-import torch
 import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
+import base64
+from io import BytesIO
 from torch.backends import cudnn
 from torch import optim
 from torch.autograd import Variable
 from torch.utils import data
 from torchvision import transforms
-from torchvision import datasets
 from PIL import Image
 from network import *
 from itertools import chain
 
-parser = argparse.ArgumentParser(description='DiscoGAN in One Code')
 
-# Task
-parser.add_argument('--task', required=True, help='task or root name')
+parser = argparse.ArgumentParser(description='DiscoGAN in One Code')
 
 # Hyper-parameters
 parser.add_argument('--num_epochs', type=int, default=1000)
@@ -35,88 +30,74 @@ parser.add_argument('--changed_rate', type=float, default=0.5)
 
 # misc
 parser.add_argument('--model_path', type=str, default='C:/Capstone/ai_dataset/discogan_models/')  # Model Tmp Save
-parser.add_argument('--data_path', type=str, default='C:/Capstone/ai_dataset/datasets/')
+parser.add_argument('--data_path', type=str, default='C:/Capstone/ai_dataset/datasets_batch/')
 parser.add_argument('--sample_path', type=str, default='./results')  # Results
 parser.add_argument('--log_step', type=int, default=10)
 parser.add_argument('--sample_step', type=int, default=50)
 parser.add_argument('--num_workers', type=int, default=2)
 parser.add_argument('--load_epoch', type=int, default=0)
 
+
 ##### Helper Functions for Data Loading & Pre-processing
 class ImageFolder(data.Dataset):
     def __init__(self, opt):
-        self.task = opt.task
         self.transformP = transforms.Compose([transforms.Resize((64, 128)),
-                                             transforms.ToTensor(),
-                                             transforms.Normalize((0.5, 0.5, 0.5),
-                                                                  (0.5, 0.5, 0.5))])
+                                              transforms.ToTensor(),
+                                              transforms.Normalize((0.5, 0.5, 0.5),
+                                                                   (0.5, 0.5, 0.5))])
         self.transformS = transforms.Compose([transforms.Resize((64, 64)),
-                                             transforms.ToTensor(),
-                                             transforms.Normalize((0.5, 0.5, 0.5),
-                                                                  (0.5, 0.5, 0.5))])
+                                              transforms.ToTensor(),
+                                              transforms.Normalize((0.5, 0.5, 0.5),
+                                                                   (0.5, 0.5, 0.5))])
         self.image_len = None
-
         self.dir_base = opt.data_path
-        if self.task.startswith('edges2'):
-            self.root = os.path.join(self.dir_base, self.task)
-            self.dir_AB = os.path.join(self.root, 'train')  # ./maps/train
-            self.image_paths = list(map(lambda x: os.path.join(self.dir_AB, x), os.listdir(self.dir_AB)))
-            self.image_len = len(self.image_paths)
 
-        elif self.task == 'handbags2shoes': # handbags2shoes
-            self.rootA = os.path.join(self.dir_base, 'edges2handbags')
-            self.rootB = os.path.join(self.dir_base, 'edges2shoes')
-            self.dir_A = os.path.join(self.rootA, 'train')
-            self.dir_B = os.path.join(self.rootB, 'train')
-            self.image_paths_A = list(map(lambda x: os.path.join(self.dir_A, x), os.listdir(self.dir_A)))
-            self.image_paths_B = list(map(lambda x: os.path.join(self.dir_B, x), os.listdir(self.dir_B)))
-            self.image_len = min(len(self.image_paths_A), len(self.image_paths_B))
+        self.rootA = os.path.join(self.dir_base, 'edges2handbags')
+        self.rootB = os.path.join(self.dir_base, 'edges2shoes')
+        self.dir_A = os.path.join(self.rootA, 'train')
+        self.dir_B = os.path.join(self.rootB, 'train')
+        self.batch_paths_A = list(map(lambda x: os.path.join(self.dir_A, x), os.listdir(self.dir_A)))
+        self.batch_paths_B = list(map(lambda x: os.path.join(self.dir_B, x), os.listdir(self.dir_B)))
+        self.images_A = self.unpack_batch(self.batch_paths_A)
+        self.images_B = self.unpack_batch(self.batch_paths_B)
 
-        else: # facescrubs
-            self.root = os.path.join(self.dir_base, 'facescrub')
-            self.rootA = os.path.join(self.root, 'actors')
-            self.rootB = os.path.join(self.root, 'actresses')
-            self.dir_A = os.path.join(self.rootA, 'face')
-            self.dir_B = os.path.join(self.rootB, 'face')
-            self.image_paths_A = list(map(lambda x: os.path.join(self.dir_A, x), os.listdir(self.dir_A)))
-            self.image_paths_B = list(map(lambda x: os.path.join(self.dir_B, x), os.listdir(self.dir_B)))
-            self.image_len = min(len(self.image_paths_A), len(self.image_paths_B))
+        self.image_len = min(len(self.images_A), len(self.images_B))
+
+    def unpack_batch(self, paths):
+        images = []
+        for path in paths:
+            with open(path, 'rb') as f:
+                batch = f.read()
+
+            offset = batch.find(b' ')
+            bs = int(batch[:offset])
+            batch = batch[offset + 1:]
+            sizes = []
+
+            for i in range(bs):
+                offset = batch.find(b' ')
+                sizes.append(int(batch[:offset]))
+                batch = batch[offset + 1:]
+
+            for size in sizes:
+                images.append(base64.b64decode(batch[:size]))
+                batch = batch[size:]
+        return images
 
     def __getitem__(self, index):
-        if self.task.startswith('edges2'):
-            AB_path = self.image_paths[index]
-            AB = Image.open(AB_path).convert('RGB')
-            AB = self.transformP(AB)
+        A_path = self.images_A[index]
+        B_path = self.images_B[index]
+        A = Image.open(BytesIO(A_path)).convert('RGB')
+        B = Image.open(BytesIO(B_path)).convert('RGB')
 
-            w_total = AB.size(2)
-            w = int(w_total / 2)
+        A = self.transformP(A)
+        B = self.transformP(B)
 
-            A = AB[:, :, :64]
-            B = AB[:, :, -64:]
+        w_total = A.size(2)
+        w = int(w_total / 2)
 
-        elif self.task == 'handbags2shoes': # handbags2shoes
-            A_path = self.image_paths_A[index]
-            B_path = self.image_paths_B[index]
-            A = Image.open(A_path).convert('RGB')
-            B = Image.open(B_path).convert('RGB')
-
-            A = self.transformP(A)
-            B = self.transformP(B)
-
-            w_total = A.size(2)
-            w = int(w_total / 2)
-
-            A = A[:, :, -64:]
-            B = B[:, :, -64:]
-
-        else: # Facescrubs
-            A_path = self.image_paths_A[index]
-            B_path = self.image_paths_B[index]
-            A = Image.open(A_path).convert('RGB')
-            B = Image.open(B_path).convert('RGB')
-
-            A = self.transformS(A)
-            B = self.transformS(B)
+        A = A[:, :, -64:]
+        B = B[:, :, -64:]
 
         return {'A': A, 'B': B}
 
