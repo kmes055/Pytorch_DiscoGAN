@@ -73,7 +73,7 @@ class ImageFolder(data.Dataset):
             w_total = AB.size(2)
             w = w_total // 2
 
-            A = AB[:, :64, :w]
+            A = AB[:, :64, :64]
             B = AB[:, :64, w:w + 64]
 
         elif self.task == 'handbags2shoes': # handbags2shoes
@@ -82,13 +82,13 @@ class ImageFolder(data.Dataset):
             A = Image.open(A_path).convert('RGB')
             B = Image.open(B_path).convert('RGB')
 
-            A = self.transformS(A)
+            A = self.transformP(A)
             B = self.transformP(B)
 
             w_total = A.size(2)
             w = w_total // 2
 
-            A = A
+            A = A[:, :64, w:w+64]
             B = B[:, :64, w:w+64]
 
         else: # Facescrubs
@@ -101,6 +101,7 @@ class ImageFolder(data.Dataset):
             B = self.transformS(B)
 
         return {'A': A, 'B': B}
+
 
     def __len__(self):
         return self.image_len
@@ -135,17 +136,13 @@ def main():
     if not os.path.exists(args.sample_path):
         os.makedirs(args.sample_path)
 
-    # Load model
-    if args.load_epoch != 0:
-        epoch = args.load_epoch
+    # Load epoch
+    epoch = args.load_epoch
+    if epoch == -1:  # load last model
+        with open(os.path.join(args.model_path, 'checkpoint.txt'), 'r') as f:
+            epoch = int(f.readline())
 
-        if epoch == -1:
-            with open(os.path.join(args.model_path, 'checkpoint.txt')) as f:
-                epoch = int(f.readline())
-
-        print('Epoch %d has loaded.' % epoch)
-    else:
-        epoch = 0
+    print('Epoch %d has loaded.' % epoch)
 
     # Networks
     g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % epoch)

@@ -172,26 +172,29 @@ def main():
     if not os.path.exists(args.sample_path):
         os.makedirs(args.sample_path)
 
-    # Networks
-    generator_AtoB = Generator()
-    generator_BtoA = Generator()
-    discriminator_A = Discriminator()
-    discriminator_B = Discriminator()
-
-    # Load model. 0 means start training
+    # Load epoch. 0 means start training
     epoch = args.load_epoch
     if epoch == -1:  # load last model
         with open(os.path.join(args.model_path, 'checkpoint.txt'), 'r') as f:
             epoch = int(f.readline())
 
-    g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % epoch)
-    g_pathBtoA = os.path.join(args.model_path, 'generatorBtoA-%d.pkl' % epoch)
-
-    generator_AtoB.load_state_dict(torch.load(g_pathAtoB))
-    generator_BtoA.load_state_dict(torch.load(g_pathBtoA))
-
     iter = 0
     print('Epoch %d has loaded.' % epoch)
+
+    # Networks
+    generator_AtoB = Generator()
+    generator_BtoA = Generator()
+
+    if epoch != 0:
+        g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % epoch)
+        g_pathBtoA = os.path.join(args.model_path, 'generatorBtoA-%d.pkl' % epoch)
+
+        generator_AtoB.load_state_dict(torch.load(g_pathAtoB))
+        generator_BtoA.load_state_dict(torch.load(g_pathBtoA))
+
+    discriminator_A = Discriminator()
+    discriminator_B = Discriminator()
+
 
     # Losses
     criterionGAN = nn.BCELoss()
