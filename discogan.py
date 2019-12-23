@@ -1,17 +1,12 @@
 import argparse
 import os
-import random
 import numpy as np
-import torch
 import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.backends import cudnn
 from torch import optim
 from torch.autograd import Variable
 from torch.utils import data
 from torchvision import transforms
-from torchvision import datasets
 from PIL import Image
 from network import *
 from itertools import chain
@@ -34,8 +29,8 @@ parser.add_argument('--starting_rate', type=float, default=0.01)
 parser.add_argument('--changed_rate', type=float, default=0.5)
 
 # misc
-parser.add_argument('--model_path', type=str, default='C:/Capstone/ai_dataset/discogan_models/')  # Model Tmp Save
-parser.add_argument('--data_path', type=str, default='C:/Capstone/ai_dataset/datasets/')
+parser.add_argument('--model_path', type=str, default='./models')  # Model Tmp Save
+parser.add_argument('--data_path', type=str, default='./datasets')
 parser.add_argument('--sample_path', type=str, default='./results')  # Results
 parser.add_argument('--log_step', type=int, default=10)
 parser.add_argument('--sample_step', type=int, default=50)
@@ -55,8 +50,8 @@ class ImageFolder(data.Dataset):
                                              transforms.Normalize((0.5, 0.5, 0.5),
                                                                   (0.5, 0.5, 0.5))])
         self.image_len = None
-
         self.dir_base = opt.data_path
+
         if self.task.startswith('edges2'):
             self.root = os.path.join(self.dir_base, self.task)
             self.dir_AB = os.path.join(self.root, 'train')  # ./maps/train
@@ -89,10 +84,10 @@ class ImageFolder(data.Dataset):
             AB = self.transformP(AB)
 
             w_total = AB.size(2)
-            w = int(w_total / 2)
+            w = w_total // 2
 
-            A = AB[:, :, :64]
-            B = AB[:, :, -64:]
+            A = AB[:, :64, :64]
+            B = AB[:, :64, w:w + 64]
 
         elif self.task == 'handbags2shoes': # handbags2shoes
             A_path = self.image_paths_A[index]
@@ -104,10 +99,10 @@ class ImageFolder(data.Dataset):
             B = self.transformP(B)
 
             w_total = A.size(2)
-            w = int(w_total / 2)
+            w = w_total // 2
 
-            A = A[:, :, -64:]
-            B = B[:, :, -64:]
+            A = A[:, :64, w:w+64]
+            B = B[:, :64, w:w+64]
 
         else: # Facescrubs
             A_path = self.image_paths_A[index]
@@ -183,28 +178,20 @@ def main():
     discriminator_A = Discriminator()
     discriminator_B = Discriminator()
 
-    # Load model
-    if args.load_epoch != 0:
-        epoch = args.load_epoch
+    # Load model. 0 means start training
+    epoch = args.load_epoch
+    if epoch == -1:  # load last model
+        with open(os.path.join(args.model_path, 'checkpoint.txt'), 'r') as f:
+            epoch = int(f.readline())
 
-        if epoch == -1:
-            with open(os.path.join(args.model_path, 'checkpoint.txt')) as f:
-                epoch = int(f.readline())
+    g_pathAtoB = os.path.join(args.model_path, 'generatorAtoB-%d.pkl' % epoch)
+    g_pathBtoA = os.path.join(args.model_path, 'generatorBtoA-%d.pkl' % epoch)
 
-        load_g_AtoB = 'generatorAtoB-%d.pkl' % epoch
-        load_g_BtoA = 'generatorBtoA-%d.pkl' % epoch
+    generator_AtoB.load_state_dict(torch.load(g_pathAtoB))
+    generator_BtoA.load_state_dict(torch.load(g_pathBtoA))
 
-        load_g_AtoB = os.path.join(args.model_path, load_g_AtoB)
-        load_g_BtoA = os.path.join(args.model_path, load_g_BtoA)
-
-        generator_AtoB.load_state_dict(torch.load(load_g_AtoB))
-        generator_BtoA.load_state_dict(torch.load(load_g_BtoA))
-
-        print('Epoch %d has loaded.' % epoch)
-    else:
-        epoch = 0
     iter = 0
-
+    print('Epoch %d has loaded.' % epoch)
 
     # Losses
     criterionGAN = nn.BCELoss()
@@ -225,7 +212,7 @@ def main():
         discriminator_B = discriminator_B.cuda()
 
     """Train generator and discriminator."""
-    total_step = len(data_loader) # For Print Log
+    total_step = len(data_loader)  # For Print Log
 
     while epoch < args.num_epochs:
         for i, sample in enumerate(data_loader):
@@ -319,9 +306,10 @@ def main():
         torch.save(generator_AtoB.state_dict(), g_pathAtoB)
         torch.save(generator_BtoA.state_dict(), g_pathBtoA)
 
-        with open(os.path.join(args.model_path, 'checkpoint.txt'), 'w') as f:
-            f.write(str(epoch + 1))
+        with open(os.path.join(args.model_path, 'checkpoint.txt'), 'w+') as f:
             epoch += 1
+            f.write(str(epoch))
+
 
 if __name__ == "__main__":
     main()

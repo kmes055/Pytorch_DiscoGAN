@@ -136,7 +136,6 @@ class Discriminator(nn.Module):
 
         feature = [layer2, layer3, layer4]
 
-        res = self.conv5(layer4)
-        sig = nn.Sigmoid()
+        res = self.sig( self.conv5( layer4 ) )
 
-        return sig(res), feature
+        return res, feature
