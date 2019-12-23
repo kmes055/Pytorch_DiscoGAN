@@ -1,7 +1,0 @@
-train
-
-python C:/Capstone/Pytorch_DiscoGAN/discogan.py --task handbags2shoes --starting_rate 0.5 --load_epoch -1 --batchSize 128
-
-test
-
-python C:/Capstone/Pytorch_DiscoGAN/discogan_final.py --load_epoch -1 --batchSize 1
